@@ -124,7 +124,7 @@ export function mapSupabaseRowToRunner(row: Record<string, any>, defaultDate: st
   const gender = gStr.startsWith('F') || gStr.includes('NỮ') || gStr === 'FEMALE' ? 'F' : 'M';
 
   // Distance
-  let rawDist = getFieldCaseInsensitive(row, ['distance', 'cu_ly', 'dist', 'distanceDisplay', 'cự ly']) ?? '';
+  let rawDist = getFieldCaseInsensitive(row, ['distance', 'cu_ly', 'dist', 'distanceDisplay', 'cự ly', 'contest']) ?? '';
   let distance = String(rawDist).trim();
   if (!distance) {
     const first = bib.charAt(0);
@@ -335,7 +335,56 @@ export async function testSupabaseConnection(
 }
 
 /**
+ * Tải toàn bộ dữ liệu từ bảng Supabase sử dụng phân trang song song (vượt qua giới hạn mặc định 1000 dòng của PostgREST)
+ */
+async function fetchAllRowsWithPagination(
+  client: SupabaseClient,
+  table: string,
+  filterCol?: string,
+  filterVal?: string
+): Promise<{ data: any[]; error: any; totalCount: number }> {
+  const PAGE_SIZE = 1000;
+
+  let baseQuery = client.from(table).select('*', { count: 'exact' });
+  if (filterCol && filterVal) {
+    baseQuery = baseQuery.eq(filterCol, filterVal);
+  }
+
+  // 1. Tải trang đầu tiên (0..999) kèm tổng số dòng chính xác (exact count)
+  const firstRes = await baseQuery.range(0, PAGE_SIZE - 1);
+  if (firstRes.error) {
+    return { data: [], error: firstRes.error, totalCount: 0 };
+  }
+
+  const allRows: any[] = [...(firstRes.data || [])];
+  const totalCount = firstRes.count ?? allRows.length;
+
+  // 2. Nếu tổng số dòng vượt quá 1000, tải toàn bộ các trang còn lại song song (parallel)
+  if (totalCount > PAGE_SIZE) {
+    const promises: Promise<any>[] = [];
+    for (let from = PAGE_SIZE; from < totalCount; from += PAGE_SIZE) {
+      const to = Math.min(from + PAGE_SIZE - 1, totalCount - 1);
+      let pageQuery = client.from(table).select('*');
+      if (filterCol && filterVal) {
+        pageQuery = pageQuery.eq(filterCol, filterVal);
+      }
+      promises.push(Promise.resolve(pageQuery.range(from, to)));
+    }
+
+    const pages = await Promise.all(promises);
+    for (const p of pages) {
+      if (p.data && Array.isArray(p.data)) {
+        allRows.push(...p.data);
+      }
+    }
+  }
+
+  return { data: allRows, error: null, totalCount: allRows.length };
+}
+
+/**
  * Tải danh sách vận động viên từ bảng Supabase theo cột Race
+ * Tự động phân trang song song để lấy toàn bộ dữ liệu (không bị chặn ở 1000 dòng)
  */
 export async function fetchRunnersFromSupabase(
   config: SupabaseConfig,
@@ -358,47 +407,46 @@ export async function fetchRunnersFromSupabase(
   }
 
   try {
-    let query = client.from(table).select('*');
+    // 1. Tải tất cả các dòng có điều kiện lọc bằng phân trang song song
+    let result = await fetchAllRowsWithPagination(
+      client,
+      table,
+      filter ? raceCol : undefined,
+      filter ? filter : undefined
+    );
 
-    // Lọc theo cột Race nếu có giá trị lọc
-    if (filter) {
-      query = query.eq(raceCol, filter);
-    }
-
-    let { data, error } = await query;
-
-    // Nếu query gặp lỗi (ví dụ do PostgREST không tìm thấy cột hoa "Race" trong postgres unquoted), thử lại với chữ thường "race"
-    if (error && raceCol !== 'race' && filter) {
-      const retry = await client.from(table).select('*').eq('race', filter);
-      if (!retry.error && retry.data) {
-        data = retry.data;
-        error = null;
+    // Nếu query có lọc gặp lỗi (ví dụ do PostgREST không tìm thấy cột có chữ hoa), thử lại với tên cột chữ thường
+    if (result.error && filter && raceCol.toLowerCase() !== raceCol) {
+      const retryLower = await fetchAllRowsWithPagination(client, table, raceCol.toLowerCase(), filter);
+      if (!retryLower.error && retryLower.data.length > 0) {
+        result = retryLower;
       }
     }
 
-    // Nếu vẫn lỗi và có filter, thử lấy toàn bộ rồi lọc tại frontend
-    if (error && filter) {
-      const fallbackAll = await client.from(table).select('*').limit(5000);
-      if (!fallbackAll.error && fallbackAll.data) {
-        const filtered = fallbackAll.data.filter((row: any) => {
+    // Nếu vẫn lỗi hoặc không có dữ liệu khi lọc, tải toàn bộ bảng không lọc rồi lọc tại client
+    if ((result.error || result.data.length === 0) && filter) {
+      const allRes = await fetchAllRowsWithPagination(client, table);
+      if (!allRes.error && allRes.data.length > 0) {
+        const filtered = allRes.data.filter((row: any) => {
           const val = row[raceCol] ?? row.Race ?? row.race ?? row.race_code ?? row.giai;
           return String(val ?? '').trim().toLowerCase() === filter.toLowerCase();
         });
-        const mapped = filtered.map((r: any) => mapSupabaseRowToRunner(r, raceDate));
-        return { runners: mapped, count: mapped.length };
+        if (filtered.length > 0) {
+          const mapped = filtered.map((r: any) => mapSupabaseRowToRunner(r, raceDate));
+          return { runners: mapped, count: mapped.length };
+        }
       }
     }
 
-    if (error) {
+    if (result.error) {
       return {
         runners: [],
-        error: `Supabase query error (${table}): ${error.message}`,
+        error: `Supabase query error (${table}): ${result.error.message}`,
         count: 0,
       };
     }
 
-    if (!data || data.length === 0) {
-      // Thử tìm xem có bản ghi nào nhưng khác chữ hoa thường của filter không
+    if (!result.data || result.data.length === 0) {
       return {
         runners: [],
         error: filter ? `Không có VĐV nào có cột ${raceCol} = "${filter}" trong bảng ${table}.` : undefined,
@@ -406,7 +454,7 @@ export async function fetchRunnersFromSupabase(
       };
     }
 
-    const runners = data.map((row: any) => mapSupabaseRowToRunner(row, raceDate));
+    const runners = result.data.map((row: any) => mapSupabaseRowToRunner(row, raceDate));
     return { runners, count: runners.length };
   } catch (err: any) {
     return {
@@ -414,5 +462,57 @@ export async function fetchRunnersFromSupabase(
       error: err.message || 'Lỗi ngoại lệ khi tải dữ liệu từ Supabase.',
       count: 0,
     };
+  }
+}
+
+/**
+ * Cấu hình Supabase xác thực mật khẩu Admin
+ */
+export const SUPABASE_AUTHEN_CONFIG = {
+  url: 'https://bwywgifhugulsehkgdjq.supabase.co',
+  anonKey: 'sb_publishable_iH29WLGKQYUhaCMq4Rbqdw_uWtkNg3Q',
+  table: 'authen',
+  rowName: 'Admin Certificate',
+};
+
+/**
+ * Lấy mật khẩu admin từ Supabase:
+ * Tìm dòng tại cột `name` bằng đúng chuỗi 'Admin Certificate'
+ * Lấy giá trị ở cột `value` của dòng đó làm mật khẩu admin
+ */
+export async function fetchAdminPasswordFromSupabase(): Promise<{ password: string | null; error?: string }> {
+  try {
+    const client = getSupabaseClient(SUPABASE_AUTHEN_CONFIG.url, SUPABASE_AUTHEN_CONFIG.anonKey);
+    if (!client) {
+      return { password: null, error: 'Không thể khởi tạo Supabase Client' };
+    }
+
+    const { data, error } = await client
+      .from(SUPABASE_AUTHEN_CONFIG.table)
+      .select('*');
+
+    if (error) {
+      console.warn('[Supabase Auth] Lỗi đọc bảng authen:', error.message);
+      return { password: null, error: error.message };
+    }
+
+    if (!data || data.length === 0) {
+      return { password: null, error: 'Bảng authen chưa có dữ liệu' };
+    }
+
+    const matchedRow = data.find((row: any) => {
+      const nameVal = (row.name ?? row.Name ?? '').toString().trim();
+      return nameVal.toLowerCase() === SUPABASE_AUTHEN_CONFIG.rowName.toLowerCase();
+    });
+
+    if (!matchedRow) {
+      return { password: null, error: `Không tìm thấy dòng '${SUPABASE_AUTHEN_CONFIG.rowName}' trong bảng authen` };
+    }
+
+    const value = (matchedRow.value ?? matchedRow.Value ?? '').toString().trim();
+    return { password: value, error: undefined };
+  } catch (err: any) {
+    console.error('[Supabase Auth] Exception:', err);
+    return { password: null, error: err.message || 'Lỗi kết nối Supabase' };
   }
 }

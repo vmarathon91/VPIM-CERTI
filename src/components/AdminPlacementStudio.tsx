@@ -37,6 +37,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { DevDataBenchmarkBox } from './DevDataBenchmarkBox';
+import { fetchAdminPasswordFromSupabase } from '../services/supabaseService';
 
 interface AdminPlacementStudioProps {
   runners: Runner[];
@@ -52,8 +53,7 @@ interface AdminPlacementStudioProps {
   onLogoUpdated: (logoUrl: string) => void;
 }
 
-const ADMIN_PASSWORD_EXPECTED = '0966559155';
-const SESSION_AUTH_KEY = 'vm_admin_auth_token_0966559155';
+const SESSION_AUTH_KEY = 'vm_admin_auth_token';
 
 export const AdminPlacementStudio: React.FC<AdminPlacementStudioProps> = ({
   runners,
@@ -78,6 +78,7 @@ export const AdminPlacementStudio: React.FC<AdminPlacementStudioProps> = ({
   const [passwordInput, setPasswordInput] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
 
   // Placements & Editor State
   const [placements, setPlacements] = useState<CertificatePlacements>(() => {
@@ -125,21 +126,69 @@ export const AdminPlacementStudio: React.FC<AdminPlacementStudioProps> = ({
     }
   }, [activeRace.id, activeRace.placements]);
 
-  // Handle Login
-  const handleLogin = (e: React.FormEvent) => {
+  // Handle Login with Supabase authen table
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (passwordInput.trim() === ADMIN_PASSWORD_EXPECTED) {
-      setIsAuthenticated(true);
-      sessionStorage.setItem(SESSION_AUTH_KEY, 'true');
-      setAuthError(null);
-    } else {
-      setAuthError('Mật khẩu không chính xác. Vui lòng nhập lại (0966559155)!');
+    const input = passwordInput.trim();
+    if (!input) {
+      setAuthError('Vui lòng nhập mật khẩu quản trị!');
+      return;
+    }
+
+    setIsLoggingIn(true);
+    setAuthError(null);
+
+    try {
+      let isValid = false;
+      let errorMessage = 'Mật khẩu không đúng. Vui lòng kiểm tra lại!';
+
+      // 1. Thử xác thực qua endpoint backend
+      try {
+        const resp = await fetch('/api/admin/verify-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: input }),
+        });
+        const data = await resp.json();
+        if (resp.ok && data.success) {
+          isValid = true;
+        } else if (data.error) {
+          errorMessage = data.error;
+        }
+      } catch (apiErr) {
+        console.warn('Backend verify-password fallback to client Supabase:', apiErr);
+      }
+
+      // 2. Fallback kiểm tra trực tiếp từ Supabase client (nếu chạy môi trường frontend thuần)
+      if (!isValid) {
+        const { password: remotePass, error: sbErr } = await fetchAdminPasswordFromSupabase();
+        if (remotePass && remotePass === input) {
+          isValid = true;
+        } else if (sbErr) {
+          console.warn('[Supabase Auth] Lỗi truy vấn bảng authen:', sbErr);
+          errorMessage = `Supabase: ${sbErr}`;
+        }
+      }
+
+      if (isValid) {
+        setIsAuthenticated(true);
+        sessionStorage.setItem(SESSION_AUTH_KEY, 'true');
+        sessionStorage.setItem('vm_admin_password', input);
+        setAuthError(null);
+      } else {
+        setAuthError(errorMessage);
+      }
+    } catch (err: any) {
+      setAuthError(err.message || 'Lỗi kiểm tra mật khẩu. Vui lòng thử lại!');
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
   const handleLogout = () => {
     setIsAuthenticated(false);
     sessionStorage.removeItem(SESSION_AUTH_KEY);
+    sessionStorage.removeItem('vm_admin_password');
     setPasswordInput('');
   };
 
@@ -242,7 +291,7 @@ export const AdminPlacementStudio: React.FC<AdminPlacementStudioProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          password: ADMIN_PASSWORD_EXPECTED,
+          password: sessionStorage.getItem('vm_admin_password') || '',
           race: updatedRace,
         }),
       });
@@ -366,9 +415,17 @@ export const AdminPlacementStudio: React.FC<AdminPlacementStudioProps> = ({
 
             <button
               type="submit"
-              className="w-full py-2.5 px-4 bg-gradient-to-r from-[#9F224E] to-[#BD1E51] hover:from-[#881337] hover:to-[#9F224E] text-white font-bold rounded-xl text-sm transition-all shadow-lg shadow-rose-950/40 cursor-pointer"
+              disabled={isLoggingIn}
+              className="w-full py-2.5 px-4 bg-gradient-to-r from-[#9F224E] to-[#BD1E51] hover:from-[#881337] hover:to-[#9F224E] text-white font-bold rounded-xl text-sm transition-all shadow-lg shadow-rose-950/40 cursor-pointer disabled:opacity-60 flex items-center justify-center gap-2"
             >
-              Đăng Nhập Quản Trị
+              {isLoggingIn ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Đang xác thực Supabase...</span>
+                </>
+              ) : (
+                <span>Đăng Nhập Quản Trị</span>
+              )}
             </button>
           </form>
 

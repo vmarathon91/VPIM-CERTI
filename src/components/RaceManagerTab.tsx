@@ -198,6 +198,43 @@ export const RaceManagerTab: React.FC<RaceManagerTabProps> = ({
     setIsModalOpen(true);
   };
 
+  const handleOpenCloneModal = (sourceRace: Race) => {
+    // Nhân bản là tạo mới 1 giải dựa trên giải đã có
+    setEditingRace(null);
+    setFormName(`${sourceRace.name} (Bản sao)`);
+    setFormSlug(`${sourceRace.slug}-copy`);
+    // Gợi ý mã giải mới (thêm C)
+    const baseCode = sourceRace.code ? `${sourceRace.code}C` : '';
+    setFormCode(baseCode);
+    setFormBgUrl(sourceRace.defaultBgUrl || '/NA26.png');
+    setFormBgDataUrl(null);
+    setFormScriptUrl(sourceRace.appsScriptUrl || '');
+    setFormPhotosScriptUrl(sourceRace.photosScriptUrl || '');
+    setFormCheckingScriptUrl(sourceRace.checkingScriptUrl || '');
+    const globalSb = getGlobalSupabaseConfig();
+    setFormSupabaseUrl(sourceRace.supabaseUrl || globalSb.url || '');
+    setFormSupabaseAnonKey(sourceRace.supabaseAnonKey || globalSb.anonKey || '');
+    setFormSupabaseTable(sourceRace.supabaseTable || globalSb.table || 'runners');
+    setFormSupabaseRaceColumn(sourceRace.supabaseRaceColumn || globalSb.raceColumn || 'Race');
+    setFormSupabaseRaceFilter(sourceRace.supabaseRaceFilter || '');
+    setFormDate(sourceRace.date || '2026');
+    setFormLocation(sourceRace.locationFull || '');
+    // Sao chép toàn bộ toạ độ phôi hiện có của giải nguồn
+    const sourcePlacements =
+      sourceRace.id === activeRaceId && currentPlacements && Object.keys(currentPlacements).length > 0
+        ? currentPlacements
+        : (sourceRace.placements || currentPlacements || DEFAULT_NGHE_AN_PLACEMENTS);
+    setFormPlacements(JSON.parse(JSON.stringify(sourcePlacements)));
+    setFormError(null);
+    setSaveSuccessMsg(`Đã nhân bản toàn bộ cấu hình từ giải "${sourceRace.name}". Bạn chỉ cần chỉnh lại Tên, URL slug hoặc Mã giải rồi bấm "Lưu & Khởi Tạo Giải".`);
+    setSavedRaceForExport(null);
+    setScriptTestResult(null);
+    setPhotosScriptTestResult(null);
+    setCheckingScriptTestResult(null);
+    setSupabaseTestResult(null);
+    setIsModalOpen(true);
+  };
+
   // Import from Static API JSON file (.json)
   const handleImportJsonFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -213,7 +250,7 @@ export const RaceManagerTab: React.FC<RaceManagerTabProps> = ({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            password: '0966559155',
+            password: sessionStorage.getItem('vm_admin_password') || '',
             raceData: { ...raceInfo, placements: importedPlacements },
           }),
         });
@@ -526,7 +563,7 @@ export const RaceManagerTab: React.FC<RaceManagerTabProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          password: '0966559155',
+          password: sessionStorage.getItem('vm_admin_password') || '',
           race: racePayload,
           backgroundDataUrl: formBgDataUrl,
         }),
@@ -558,7 +595,7 @@ export const RaceManagerTab: React.FC<RaceManagerTabProps> = ({
       } catch {}
       const resp = await fetch(`/api/admin/races/${race.id}`, {
         method: 'DELETE',
-        headers: { 'x-admin-password': '0966559155' },
+        headers: { 'x-admin-password': sessionStorage.getItem('vm_admin_password') || '' },
       });
       if (resp.ok) {
         await onRefreshRaces();
@@ -838,6 +875,17 @@ export const RaceManagerTab: React.FC<RaceManagerTabProps> = ({
                     </span>
 
                     <div className="flex items-center gap-1.5">
+                      {/* Clone / Nhân bản */}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenCloneModal(race)}
+                        className="px-2 py-1 rounded-lg bg-teal-950/70 hover:bg-teal-900/90 border border-teal-700/80 text-teal-300 hover:text-white transition-colors cursor-pointer text-[11px] flex items-center gap-1"
+                        title="Nhân bản (Clone) giải này để tạo giải mới nhanh chóng"
+                      >
+                        <Copy className="w-3 h-3 text-teal-400" />
+                        <span>Nhân bản</span>
+                      </button>
+
                       {/* Edit */}
                       <button
                         type="button"
@@ -869,21 +917,26 @@ export const RaceManagerTab: React.FC<RaceManagerTabProps> = ({
         })}
       </div>
 
-      {/* CREATE / EDIT RACE MODAL */}
+      {/* CREATE / EDIT / CLONE RACE MODAL */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-stone-900 border border-stone-700 rounded-3xl max-w-2xl w-full p-6 sm:p-7 shadow-2xl text-stone-100 my-8">
-            <div className="flex items-center justify-between border-b border-stone-800 pb-4 mb-5">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overflow-y-auto p-3 sm:p-5 flex justify-center items-start">
+          <div className="bg-stone-900 border border-stone-700 rounded-3xl max-w-2xl w-full my-auto sm:my-6 shadow-2xl text-stone-100 flex flex-col max-h-[92vh] overflow-hidden">
+            {/* Header: PINNED AT TOP (Không bao giờ bị cụt phần đầu) */}
+            <div className="flex items-center justify-between border-b border-stone-800 p-5 sm:p-6 pb-4 bg-stone-900 shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-teal-500/20 border border-teal-500/40 flex items-center justify-center text-teal-400">
+                <div className="w-10 h-10 rounded-xl bg-teal-500/20 border border-teal-500/40 flex items-center justify-center text-teal-400 shrink-0">
                   <Trophy className="w-5 h-5" />
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-white">
-                    {editingRace ? 'Chỉnh Sửa Giải Đấu' : 'Tạo Giải Đấu Mới'}
+                    {editingRace
+                      ? 'Chỉnh Sửa Cài Đặt Giải Đấu'
+                      : formName.includes('(Bản sao)')
+                      ? 'Nhân Bản & Tạo Giải Mới'
+                      : 'Tạo Giải Đấu Mới'}
                   </h3>
                   <p className="text-stone-400 text-xs">
-                    Cấu hình gồm Tên giải, URL vào trang, Phôi nền Certificate và Script data
+                    Cấu hình gồm Tên giải, URL vào trang, Phôi nền Certificate và Nguồn dữ liệu
                   </p>
                 </div>
               </div>
@@ -891,52 +944,55 @@ export const RaceManagerTab: React.FC<RaceManagerTabProps> = ({
                 type="button"
                 onClick={() => setIsModalOpen(false)}
                 className="p-2 text-stone-400 hover:text-white hover:bg-stone-800 rounded-xl transition-colors cursor-pointer"
+                title="Đóng popup"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Success message banner with Export Excel action */}
-            {saveSuccessMsg && (
-              <div className="mb-5 p-4 bg-emerald-950/70 border border-emerald-600 rounded-2xl space-y-3">
-                <div className="flex items-center gap-2 text-emerald-300 font-bold text-xs">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>{saveSuccessMsg}</span>
+            {/* Scrollable Modal Content (Toàn bộ các mục form cuộn mượt bên trong) */}
+            <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-4">
+              {/* Success message banner with Export Excel action */}
+              {saveSuccessMsg && (
+                <div className="mb-4 p-4 bg-emerald-950/70 border border-emerald-600 rounded-2xl space-y-3">
+                  <div className="flex items-center gap-2 text-emerald-300 font-bold text-xs">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>{saveSuccessMsg}</span>
+                  </div>
+                  <div className="flex items-center gap-2 pt-1 flex-wrap">
+                    {savedRaceForExport && (
+                      <button
+                        type="button"
+                        onClick={() => exportRaceStaticApi(savedRaceForExport, currentPlacements)}
+                        className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
+                        title="Tải file API tĩnh (.json) để ném vào public/races/"
+                      >
+                        <FileCode className="w-3.5 h-3.5" />
+                        <span>Xuất File API Tĩnh (.json)</span>
+                      </button>
+                    )}
+                    {savedRaceForExport && (
+                      <button
+                        type="button"
+                        onClick={() => onNavigateToRace(savedRaceForExport.slug)}
+                        className="px-3 py-1.5 bg-stone-800 hover:bg-stone-750 text-stone-200 font-medium rounded-lg text-xs flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Xem trang giải ngay</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 pt-1 flex-wrap">
-                  {savedRaceForExport && (
-                    <button
-                      type="button"
-                      onClick={() => exportRaceStaticApi(savedRaceForExport, currentPlacements)}
-                      className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
-                      title="Tải file API tĩnh (.json) để ném vào public/races/"
-                    >
-                      <FileCode className="w-3.5 h-3.5" />
-                      <span>Xuất File API Tĩnh (.json)</span>
-                    </button>
-                  )}
-                  {savedRaceForExport && (
-                    <button
-                      type="button"
-                      onClick={() => onNavigateToRace(savedRaceForExport.slug)}
-                      className="px-3 py-1.5 bg-stone-800 hover:bg-stone-750 text-stone-200 font-medium rounded-lg text-xs flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      <span>Xem trang giải ngay</span>
-                    </button>
-                  )}
+              )}
+
+              {formError && (
+                <div className="mb-4 p-3 bg-red-950/60 border border-red-800 rounded-xl flex items-center gap-2 text-xs text-red-300">
+                  <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                  <span>{formError}</span>
                 </div>
-              </div>
-            )}
+              )}
 
-            {formError && (
-              <div className="mb-4 p-3 bg-red-950/60 border border-red-800 rounded-xl flex items-center gap-2 text-xs text-red-300">
-                <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
-                <span>{formError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleSubmitRace} className="space-y-4">
+              <form id="race-edit-form" onSubmit={handleSubmitRace} className="space-y-4">
               {/* 1/ Tên giải */}
               <div>
                 <label className="block text-xs font-bold text-stone-200 mb-1">
@@ -1383,34 +1439,37 @@ export const RaceManagerTab: React.FC<RaceManagerTabProps> = ({
                 </div>
               </div>
 
-              {/* Modal Actions */}
-              <div className="pt-4 border-t border-stone-800 flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 bg-stone-800 hover:bg-stone-750 text-stone-300 rounded-xl text-xs font-semibold cursor-pointer"
-                >
-                  Đóng
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSaving}
-                  className="px-5 py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-md cursor-pointer disabled:opacity-50"
-                >
-                  {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                  <span>{editingRace ? 'Lưu Thay Đổi' : 'Lưu & Khởi Tạo Giải'}</span>
-                </button>
-              </div>
-            </form>
+              </form>
+            </div>
+
+            {/* Pinned Modal Footer (Các nút bấm luôn cố định dưới chân, không cần cuộn) */}
+            <div className="p-4 sm:p-5 border-t border-stone-800 bg-stone-900/95 shrink-0 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="px-4 py-2 bg-stone-800 hover:bg-stone-750 text-stone-300 rounded-xl text-xs font-semibold cursor-pointer"
+              >
+                Đóng
+              </button>
+              <button
+                type="submit"
+                form="race-edit-form"
+                disabled={isSaving}
+                className="px-5 py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-md cursor-pointer disabled:opacity-50"
+              >
+                {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                <span>{editingRace ? 'Lưu Thay Đổi' : 'Lưu & Khởi Tạo Giải'}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
 
       {/* MODAL: MÃ GOOGLE APPS SCRIPT CHO GOOGLE SHEET ẢNH (2 CỘT: BIB & IMG) */}
       {showScriptModal && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-stone-900 border border-stone-700 rounded-3xl max-w-2xl w-full p-6 sm:p-7 shadow-2xl text-stone-100 my-8 space-y-4">
-            <div className="flex items-center justify-between border-b border-stone-800 pb-3.5">
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm overflow-y-auto p-3 sm:p-5 flex justify-center items-start">
+          <div className="bg-stone-900 border border-stone-700 rounded-3xl max-w-2xl w-full my-auto sm:my-6 shadow-2xl text-stone-100 flex flex-col max-h-[92vh] overflow-hidden">
+            <div className="flex items-center justify-between border-b border-stone-800 p-5 sm:p-6 pb-3.5 bg-stone-900 shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
                   <Code2 className="w-5 h-5" />
@@ -1432,6 +1491,8 @@ export const RaceManagerTab: React.FC<RaceManagerTabProps> = ({
                 <X className="w-5 h-5" />
               </button>
             </div>
+
+            <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-4">
 
             {/* Quick 3-Step Guide */}
             <div className="p-3.5 bg-stone-950/70 border border-stone-800 rounded-2xl text-xs space-y-1.5 text-stone-300">
@@ -1474,7 +1535,9 @@ export const RaceManagerTab: React.FC<RaceManagerTabProps> = ({
               </pre>
             </div>
 
-            <div className="flex items-center justify-end pt-2 border-t border-stone-800">
+            </div>
+
+            <div className="flex items-center justify-end p-4 border-t border-stone-800 bg-stone-900 shrink-0">
               <button
                 type="button"
                 onClick={() => setShowScriptModal(false)}
@@ -1489,9 +1552,9 @@ export const RaceManagerTab: React.FC<RaceManagerTabProps> = ({
 
       {/* MODAL: MÃ GOOGLE APPS SCRIPT CHO SHEET CHECKING (TIMESTAMP, BIB, RACE, TIME) */}
       {showCheckingScriptModal && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-stone-900 border border-stone-700 rounded-3xl max-w-2xl w-full p-6 sm:p-7 shadow-2xl text-stone-100 my-8 space-y-4">
-            <div className="flex items-center justify-between border-b border-stone-800 pb-3.5">
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm overflow-y-auto p-3 sm:p-5 flex justify-center items-start">
+          <div className="bg-stone-900 border border-stone-700 rounded-3xl max-w-2xl w-full my-auto sm:my-6 shadow-2xl text-stone-100 flex flex-col max-h-[92vh] overflow-hidden">
+            <div className="flex items-center justify-between border-b border-stone-800 p-5 sm:p-6 pb-3.5 bg-stone-900 shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-teal-500/20 border border-teal-500/40 flex items-center justify-center text-teal-400">
                   <Code2 className="w-5 h-5" />
@@ -1513,6 +1576,8 @@ export const RaceManagerTab: React.FC<RaceManagerTabProps> = ({
                 <X className="w-5 h-5" />
               </button>
             </div>
+
+            <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-4">
 
             {/* Quick 3-Step Guide */}
             <div className="p-3.5 bg-stone-950/70 border border-stone-800 rounded-2xl text-xs space-y-1.5 text-stone-300">
@@ -1555,7 +1620,9 @@ export const RaceManagerTab: React.FC<RaceManagerTabProps> = ({
               </pre>
             </div>
 
-            <div className="flex items-center justify-end pt-2 border-t border-stone-800">
+            </div>
+
+            <div className="flex items-center justify-end p-4 border-t border-stone-800 bg-stone-900 shrink-0">
               <button
                 type="button"
                 onClick={() => setShowCheckingScriptModal(false)}

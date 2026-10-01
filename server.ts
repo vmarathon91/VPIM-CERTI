@@ -344,13 +344,89 @@ async function startServer() {
     }
   });
 
+  // Supabase Configuration for Admin Authentication
+  const SUPABASE_AUTHEN_URL = 'https://bwywgifhugulsehkgdjq.supabase.co';
+  const SUPABASE_AUTHEN_KEY = 'sb_publishable_iH29WLGKQYUhaCMq4Rbqdw_uWtkNg3Q';
+
+  let cachedAdminPassword: { value: string; fetchedAt: number } | null = null;
+  const ADMIN_PASS_CACHE_TTL = 30 * 1000; // 30s cache
+
+  async function getAdminPasswordFromSupabase(): Promise<string | null> {
+    const now = Date.now();
+    if (cachedAdminPassword && now - cachedAdminPassword.fetchedAt < ADMIN_PASS_CACHE_TTL) {
+      return cachedAdminPassword.value;
+    }
+
+    try {
+      const resp = await fetch(`${SUPABASE_AUTHEN_URL}/rest/v1/authen?select=*`, {
+        headers: {
+          apikey: SUPABASE_AUTHEN_KEY,
+          Authorization: `Bearer ${SUPABASE_AUTHEN_KEY}`,
+        },
+      });
+
+      if (resp.ok) {
+        const rows = await resp.json();
+        if (Array.isArray(rows)) {
+          const target = rows.find((r: any) => {
+            const n = (r.name ?? r.Name ?? '').toString().trim().toLowerCase();
+            return n === 'Admin Certificate'.toLowerCase();
+          });
+          if (target) {
+            const val = String(target.value ?? target.Value ?? '').trim();
+            cachedAdminPassword = { value: val, fetchedAt: now };
+            return val;
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn('[Supabase Auth] Lỗi tải mật khẩu admin từ Supabase:', err.message);
+    }
+    return cachedAdminPassword ? cachedAdminPassword.value : null;
+  }
+
+  async function verifyAdminPassword(inputPassword: string | undefined): Promise<{ valid: boolean; error?: string }> {
+    if (!inputPassword) return { valid: false, error: 'Vui lòng nhập mật khẩu.' };
+    const trimmed = inputPassword.trim();
+    if (!trimmed) return { valid: false, error: 'Vui lòng nhập mật khẩu.' };
+
+    // 1. Lấy mật khẩu duy nhất từ bảng authen trên Supabase (name = 'Admin Certificate')
+    const remotePassword = await getAdminPasswordFromSupabase();
+    if (!remotePassword) {
+      return {
+        valid: false,
+        error: 'Chưa lấy được mật khẩu từ Supabase (bảng authen đang trả về rỗng). Nguyên nhân: RLS (Row Level Security) đang chặn key anon đọc dữ liệu. Vui lòng tắt RLS hoặc tạo Policy SELECT trên Supabase.',
+      };
+    }
+
+    if (trimmed === remotePassword) {
+      return { valid: true };
+    }
+
+    return { valid: false, error: 'Mật khẩu không đúng. Vui lòng kiểm tra lại!' };
+  }
+
+  // Admin API: Verify admin password
+  app.post('/api/admin/verify-password', async (req, res) => {
+    try {
+      const { password } = req.body;
+      const result = await verifyAdminPassword(password);
+      if (result.valid) {
+        return res.json({ success: true, message: 'Xác thực thành công từ Supabase!' });
+      }
+      return res.status(401).json({ success: false, error: result.error || 'Mật khẩu không chính xác.' });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // Admin API: Import static race JSON directly
-  app.post('/api/admin/import-static-race', (req, res) => {
+  app.post('/api/admin/import-static-race', async (req, res) => {
     try {
       const { password, raceData } = req.body;
-      const ADMIN_PASSWORD = '0966559155';
-      if (password !== ADMIN_PASSWORD) {
-        return res.status(401).json({ error: 'Mật khẩu quản trị không chính xác.' });
+      const check = await verifyAdminPassword(password);
+      if (!check.valid) {
+        return res.status(401).json({ error: check.error || 'Mật khẩu quản trị không chính xác.' });
       }
 
       const normalized = normalizeRaceObject(raceData);
@@ -383,13 +459,13 @@ async function startServer() {
   });
 
   // Admin API: Create or update a race
-  app.post('/api/admin/races', (req, res) => {
+  app.post('/api/admin/races', async (req, res) => {
     try {
       const { password, race, backgroundDataUrl } = req.body;
-      const ADMIN_PASSWORD = '0966559155';
 
-      if (password !== ADMIN_PASSWORD) {
-        return res.status(401).json({ error: 'Mật khẩu quản trị không chính xác (yêu cầu: 0966559155).' });
+      const check = await verifyAdminPassword(password);
+      if (!check.valid) {
+        return res.status(401).json({ error: check.error || 'Mật khẩu quản trị không chính xác.' });
       }
 
       if (!race || !race.name || !race.slug) {
@@ -509,12 +585,12 @@ async function startServer() {
   });
 
   // Admin API: Delete a race
-  app.delete('/api/admin/races/:id', (req, res) => {
+  app.delete('/api/admin/races/:id', async (req, res) => {
     try {
       const password = req.headers['x-admin-password'] || req.query.password;
-      const ADMIN_PASSWORD = '0966559155';
-      if (password !== ADMIN_PASSWORD) {
-        return res.status(401).json({ error: 'Mật khẩu quản trị không chính xác.' });
+      const check = await verifyAdminPassword(password as string);
+      if (!check.valid) {
+        return res.status(401).json({ error: check.error || 'Mật khẩu quản trị không chính xác.' });
       }
 
       const raceId = req.params.id;
@@ -554,13 +630,13 @@ async function startServer() {
   });
 
   // Admin API: Save placements directly into hardcoded code (src/data/certificatePlacements.ts) and public JSON
-  app.post('/api/admin/save-placements', (req, res) => {
+  app.post('/api/admin/save-placements', async (req, res) => {
     try {
       const { password, placements } = req.body;
-      const ADMIN_PASSWORD = '0966559155';
 
-      if (password !== ADMIN_PASSWORD) {
-        return res.status(401).json({ error: 'Mật khẩu quản trị không chính xác (yêu cầu: 0966559155).' });
+      const check = await verifyAdminPassword(password);
+      if (!check.valid) {
+        return res.status(401).json({ error: check.error || 'Mật khẩu quản trị không chính xác.' });
       }
 
       if (!placements || typeof placements !== 'object') {
