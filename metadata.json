@@ -1,0 +1,6 @@
+{
+  "name": "Tra Cứu Chứng Nhận VnExpress Marathon",
+  "description": "Tra cứu thành tích chạy VnExpress Marathon theo BIB hoặc Họ tên, tự động điền dữ liệu vào ảnh chứng nhận Finisher và tải ảnh chất lượng cao.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

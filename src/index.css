@@ -1,0 +1,107 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: 'Neue Plak Bold';
+  src: url('/font/NeuePlakBold.woff2') format('woff2'),
+       url('/font/Monotype%20%20-%20Neue%20Plak%20Bold.woff2') format('woff2'),
+       url('/font/Monotype%20%20-%20Neue%20Plak%20Bold-1.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Neue Plak Bold';
+  src: url('/font/NeuePlakBold.woff2') format('woff2'),
+       url('/font/Monotype%20%20-%20Neue%20Plak%20Bold.woff2') format('woff2'),
+       url('/font/Monotype%20%20-%20Neue%20Plak%20Bold-1.woff2') format('woff2');
+  font-weight: bold;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Neue Plak Bold';
+  src: url('/font/NeuePlakBold.woff2') format('woff2'),
+       url('/font/Monotype%20%20-%20Neue%20Plak%20Bold.woff2') format('woff2'),
+       url('/font/Monotype%20%20-%20Neue%20Plak%20Bold-1.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Neue Plak Bold';
+  src: url('/font/NeuePlakBold.woff2') format('woff2'),
+       url('/font/Monotype%20%20-%20Neue%20Plak%20Bold.woff2') format('woff2'),
+       url('/font/Monotype%20%20-%20Neue%20Plak%20Bold-1.woff2') format('woff2');
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Neue Plak Bold';
+  src: url('/font/NeuePlakBold.woff2') format('woff2'),
+       url('/font/Monotype%20%20-%20Neue%20Plak%20Bold.woff2') format('woff2'),
+       url('/font/Monotype%20%20-%20Neue%20Plak%20Bold-1.woff2') format('woff2');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Neue Plak';
+  src: url('/font/NeuePlakBold.woff2') format('woff2'),
+       url('/font/Monotype%20%20-%20Neue%20Plak%20Bold.woff2') format('woff2'),
+       url('/font/Monotype%20%20-%20Neue%20Plak%20Bold-1.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Neue Plak';
+  src: url('/font/NeuePlakBold.woff2') format('woff2'),
+       url('/font/Monotype%20%20-%20Neue%20Plak%20Bold.woff2') format('woff2'),
+       url('/font/Monotype%20%20-%20Neue%20Plak%20Bold-1.woff2') format('woff2');
+  font-weight: bold;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Neue Plak';
+  src: url('/font/NeuePlakBold.woff2') format('woff2'),
+       url('/font/Monotype%20%20-%20Neue%20Plak%20Bold.woff2') format('woff2'),
+       url('/font/Monotype%20%20-%20Neue%20Plak%20Bold-1.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Neue Plak';
+  src: url('/font/NeuePlakBold.woff2') format('woff2'),
+       url('/font/Monotype%20%20-%20Neue%20Plak%20Bold.woff2') format('woff2'),
+       url('/font/Monotype%20%20-%20Neue%20Plak%20Bold-1.woff2') format('woff2');
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Neue Plak';
+  src: url('/font/NeuePlakBold.woff2') format('woff2'),
+       url('/font/Monotype%20%20-%20Neue%20Plak%20Bold.woff2') format('woff2'),
+       url('/font/Monotype%20%20-%20Neue%20Plak%20Bold-1.woff2') format('woff2');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+.font-neue-plak,
+.font-stat-value {
+  font-family: 'Neue Plak Bold', 'Neue Plak', 'Montserrat', sans-serif !important;
+}
+
